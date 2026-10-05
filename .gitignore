@@ -1,0 +1,10 @@
+.zig-cache/
+zig-out/
+.DS_Store
+
+# Matériel propriétaire : ne jamais committer
+*.vms
+*.VMS
+*.zip
+*.pdf
+roms/
