@@ -84,6 +84,18 @@ zig build test
 zig build         # bibliothèque statique liblc86k.a
 ```
 
+Un fichier test et un programme de test sont disponibles.
+
+```sh
+zig build test --summary all
+Build Summary: 5/5 steps succeeded; 57/57 tests passed
+test success
+├─ run test 54 pass (54 total) 16ms MaxRSS:4M
+│  └─ compile test Debug native cached 55ms MaxRSS:21M
+└─ run test 3 pass (3 total) 31ms MaxRSS:5M
+   └─ compile test Debug native cached 55ms MaxRSS:21M
+```
+
 Zig 0.16 requis. 
 
 ## Utilisation

@@ -75,4 +75,17 @@ pub fn build(b: *std.Build) void {
     const run_tests = b.addRunArtifact(tests);
     const test_step = b.step("test", "Run the tests");
     test_step.dependOn(&run_tests.step);
+
+    // ── Programme de validation (tests/) ─────────────────────────
+    // Consomme la bibliothèque comme un utilisateur : @import("lc86k")
+    const prog_test_mod = b.createModule(.{
+        .root_source_file = b.path("tests/programme_validation.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+    prog_test_mod.addImport("lc86k", lib_mod);
+
+    const prog_tests = b.addTest(.{ .root_module = prog_test_mod });
+    const run_prog_tests = b.addRunArtifact(prog_tests);
+    test_step.dependOn(&run_prog_tests.step);
 }
