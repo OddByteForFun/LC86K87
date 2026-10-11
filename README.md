@@ -4,6 +4,9 @@
 en **Zig 0.16**. Bibliothèque autonome : aucune dépendance, aucun moteur de rendu,
 aucun système de fichiers.
 
+> Emulator core for the Sanyo LC86K87 (Dreamcast VMU) 8-bit CPU, written in Zig.
+> Keywords: Dreamcast, VMU, visual memory unit, LC86K87, Sanyo, emulator, CPU, Zig.
+
 ## Spécification
 
 | Élément | Implémentation |
