@@ -1,4 +1,4 @@
-﻿const std = @import("std");
+const std = @import("std");
 const testing = std.testing;
 const Cpu = @import("lc86K").Cpu;
 const step = @import("decode").step;
@@ -967,4 +967,285 @@ test "VMC-214 CALLF example 1" {
     try testing.expectEqual(@as(u8, 0x00), cpu.a);
     _ = step(&cpu); // RET
     try testing.expectEqual(@as(u16, 0xFFF), cpu.pc);
+}
+
+test "BE @R0, #imm8, rel8 (3-byte instruction)" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    // BE @R0, #0x42, +5
+    // Opcode for BE @R0 is 0x34 (row 3 col 4)
+    rom[0x100] = 0x34;
+    rom[0x101] = 0x42;
+    rom[0x102] = 0x05;
+
+    // Set R0 in RAM bank 0 (register 0x00) pointing to address 0x50
+    cpu.ram_bank0[0x00] = 0x50;
+
+    // Case 1: val == imm8 -> branch taken: target = 0x100 + 3 + 5 = 0x108, CY = false
+    cpu.pc = 0x100;
+    cpu.ram_bank0[0x50] = 0x42;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x108), cpu.pc);
+    try testing.expect(!cpu.psw.cy);
+
+    // Case 2: val < imm8 -> branch not taken: pc = 0x103, CY = true
+    cpu.pc = 0x100;
+    cpu.ram_bank0[0x50] = 0x30;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x103), cpu.pc);
+    try testing.expect(cpu.psw.cy);
+
+    // Case 3: val > imm8 -> branch not taken: pc = 0x103, CY = false
+    cpu.pc = 0x100;
+    cpu.ram_bank0[0x50] = 0x50;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x103), cpu.pc);
+    try testing.expect(!cpu.psw.cy);
+}
+
+test "BNE @R1, #imm8, rel8 (3-byte instruction)" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    // BNE @R1, #0x42, +5
+    // Opcode for BNE @R1 is 0x45 (row 4 col 5)
+    rom[0x100] = 0x45;
+    rom[0x101] = 0x42;
+    rom[0x102] = 0x05;
+
+    // Set R1 in RAM bank 0 (register 0x01) pointing to 0x50
+    cpu.ram_bank0[0x01] = 0x50;
+
+    // Case 1: val != imm8 (and val < imm8) -> branch taken: target = 0x108, CY = true
+    cpu.pc = 0x100;
+    cpu.ram_bank0[0x50] = 0x30;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x108), cpu.pc);
+    try testing.expect(cpu.psw.cy);
+
+    // Case 2: val == imm8 -> branch not taken: pc = 0x103, CY = false
+    cpu.pc = 0x100;
+    cpu.ram_bank0[0x50] = 0x42;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x103), cpu.pc);
+    try testing.expect(!cpu.psw.cy);
+}
+
+test "ROL and ROR preserve CY flag" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    rom[0] = 0xE0; // ROL
+    rom[1] = 0xC0; // ROR
+
+    // Test with CY = true
+    cpu.a = 0x81; // bit 7 = 1, bit 0 = 1
+    cpu.psw.cy = true;
+    _ = step(&cpu); // ROL: a becomes 0x03, CY must remain true
+    try testing.expectEqual(@as(u8, 0x03), cpu.a);
+    try testing.expect(cpu.psw.cy);
+
+    _ = step(&cpu); // ROR: a becomes 0x81, CY must remain true
+    try testing.expectEqual(@as(u8, 0x81), cpu.a);
+    try testing.expect(cpu.psw.cy);
+
+    // Test with CY = false
+    cpu.pc = 0;
+    cpu.a = 0x80;
+    cpu.psw.cy = false;
+    _ = step(&cpu); // ROL: a becomes 0x01, CY must remain false
+    try testing.expectEqual(@as(u8, 0x01), cpu.a);
+    try testing.expect(!cpu.psw.cy);
+
+    _ = step(&cpu); // ROR: a becomes 0x80, CY must remain false
+    try testing.expectEqual(@as(u8, 0x80), cpu.a);
+    try testing.expect(!cpu.psw.cy);
+}
+
+test "INC and DEC do not alter PSW.P" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    rom[0] = 0x62; rom[1] = 0x50; // INC 0x50 (RAM)
+    rom[2] = 0x72; rom[3] = 0x50; // DEC 0x50 (RAM)
+
+    cpu.ram_bank0[0x50] = 0x00; // popcount = 0 (even)
+    cpu.psw.p = true; // Set parity to true
+    _ = step(&cpu); // INC: ram becomes 0x01 (popcount=1), but PSW.P must stay true!
+    try testing.expectEqual(@as(u8, 0x01), cpu.ram_bank0[0x50]);
+    try testing.expect(cpu.psw.p);
+
+    cpu.psw.p = false;
+    _ = step(&cpu); // DEC: ram becomes 0x00, PSW.P must stay false!
+    try testing.expectEqual(@as(u8, 0x00), cpu.ram_bank0[0x50]);
+    try testing.expect(!cpu.psw.p);
+}
+
+test "MUL and DIV update PSW.P" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    rom[0] = 0x30; // MUL: (B)(ACC)(C) <- (ACC)(C) * (B)
+    rom[1] = 0x40; // DIV: (ACC)(C), mod(B) <- (ACC)(C) / (B)
+
+    // MUL: (ACC=1, C=0) * B=3 -> result 0x0300 -> ACC=3, B=0, C=0
+    // ACC=3 has popcount 2 (even) -> psw.p = false
+    cpu.a = 1;
+    cpu.c = 0;
+    cpu.b = 3;
+    cpu.psw.p = true;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u8, 3), cpu.a);
+    try testing.expect(!cpu.psw.p);
+
+    // DIV: (ACC=3, C=0) / B=3 -> result 0x0100 -> ACC=1, C=0, B=0
+    // ACC=1 has popcount 1 (odd) -> psw.p = true
+    cpu.a = 3;
+    cpu.c = 0;
+    cpu.b = 3;
+    cpu.psw.p = false;
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u8, 1), cpu.a);
+    try testing.expect(cpu.psw.p);
+}
+
+test "CALLF commits pending bank switch" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    rom[0] = 0x20; rom[1] = 0x01; rom[2] = 0x00; // CALLF 0x0100
+    cpu.pending_ext = 0x88; // Flash0 switch requested
+    _ = step(&cpu);
+    try testing.expectEqual(@as(u16, 0x0100), cpu.pc);
+    try testing.expectEqual(cpu.inst_bank.bank_id, .flash0);
+}
+
+test "SFR_PSW and SFR_ACC parity behavior" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+
+    // Writing to ACC updates parity
+    cpu.storeSFR(Cpu.SFR_ACC, 0x01); // 1 bit set -> odd -> psw.p = true
+    try testing.expect(cpu.psw.p);
+    try testing.expectEqual(@as(u8, 1), cpu.loadSFR(Cpu.SFR_PSW) & 0x01);
+
+    cpu.storeSFR(Cpu.SFR_ACC, 0x03); // 2 bits set -> even -> psw.p = false
+    try testing.expect(!cpu.psw.p);
+    try testing.expectEqual(@as(u8, 0), cpu.loadSFR(Cpu.SFR_PSW) & 0x01);
+
+    // Writing to PSW cannot corrupt read-only parity bit (bit 0)
+    cpu.storeSFR(Cpu.SFR_PSW, 0xFF); // All bits 1 including bit 0
+    try testing.expect(!cpu.psw.p); // ACC is still 0x03, so parity must remain false!
+    try testing.expectEqual(@as(u8, 0xFE), cpu.loadSFR(Cpu.SFR_PSW));
+}
+
+test "SFR_VRMAD1, SFR_VRMAD2, and SFR_VTRBF auto-increment" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+
+    // Write VRMAD1 = 0xFF, VRMAD2 = 0x01 (address = 0x1FF)
+    cpu.storeSFR(Cpu.SFR_VRMAD1, 0xFF);
+    cpu.storeSFR(Cpu.SFR_VRMAD2, 0x01);
+    try testing.expectEqual(@as(u16, 0x1FF), cpu.vrmad);
+    try testing.expectEqual(@as(u8, 0xFF), cpu.loadSFR(Cpu.SFR_VRMAD1));
+    // VRMAD2 reads 0xFE | bit0 -> 0xFF
+    try testing.expectEqual(@as(u8, 0xFF), cpu.loadSFR(Cpu.SFR_VRMAD2));
+
+    // Enable auto-increment (VSEL bit 4)
+    cpu.storeSFR(Cpu.SFR_VSEL, 0x10);
+
+    // Write to VTRBF at 0x1FF -> should write work_ram[0x1FF] and wrap vrmad to 0x000
+    cpu.storeSFR(Cpu.SFR_VTRBF, 0xAB);
+    try testing.expectEqual(@as(u8, 0xAB), cpu.work_ram[0x1FF]);
+    try testing.expectEqual(@as(u16, 0x000), cpu.vrmad);
+    try testing.expectEqual(@as(u8, 0x00), cpu.loadSFR(Cpu.SFR_VRMAD1));
+    try testing.expectEqual(@as(u8, 0xFE), cpu.loadSFR(Cpu.SFR_VRMAD2));
+
+    // Read from VTRBF at 0x000 -> should read work_ram[0] and auto-increment vrmad to 0x001
+    cpu.work_ram[0] = 0x42;
+    const read_val = cpu.loadSFR(Cpu.SFR_VTRBF);
+    try testing.expectEqual(@as(u8, 0x42), read_val);
+    try testing.expectEqual(@as(u16, 0x001), cpu.vrmad);
+    try testing.expectEqual(@as(u8, 0x01), cpu.loadSFR(Cpu.SFR_VRMAD1));
+}
+
+test "Base Timer INT1 periodic rate" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+    // Enable base timer, INT1 rate = 32 ticks (BTCR5:4 = 00)
+    cpu.sfr_raw[Cpu.SFR_BTCR] = Cpu.BTCR_BT_RUN | Cpu.BTCR_BT1_IE;
+    // Set fixed-point step so each cycle = exactly 1 fBST tick (65536)
+    cpu.fBST_per_cycle_fp = 0x10000;
+
+    // Tick 31 cycles: counter goes 0 -> 31, no flag yet
+    cpu.tickTimers(31);
+    try testing.expectEqual(@as(u16, 31), cpu.base_timer_counter);
+    try testing.expectEqual(@as(u8, 0), cpu.sfr_raw[Cpu.SFR_BTCR] & Cpu.BTCR_BT1_FLAG);
+
+    // Tick 1 more cycle: counter becomes 32 (multiple of 32) -> flag set!
+    cpu.tickTimers(1);
+    try testing.expectEqual(@as(u16, 32), cpu.base_timer_counter);
+    try testing.expect(cpu.sfr_raw[Cpu.SFR_BTCR] & Cpu.BTCR_BT1_FLAG != 0);
+
+    // Clear flag and tick 32 more cycles: flag must be set again!
+    cpu.sfr_raw[Cpu.SFR_BTCR] &= ~Cpu.BTCR_BT1_FLAG;
+    cpu.tickTimers(32);
+    try testing.expectEqual(@as(u16, 64), cpu.base_timer_counter);
+    try testing.expect(cpu.sfr_raw[Cpu.SFR_BTCR] & Cpu.BTCR_BT1_FLAG != 0);
+}
+
+test "Timer 0 Mode 2 requires both T0LRUN and T0HRUN" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+
+    // Set prescaler to divide by 1: T0PRR = 255 (scale = 256 - 255 = 1)
+    cpu.sfr_raw[Cpu.SFR_T0PRR] = 255;
+    // Mode 2: T0LONG = 1, but only T0HRUN = 1 (T0LRUN = 0)
+    cpu.sfr_raw[Cpu.SFR_T0CNT] = Cpu.T0CNT_T0LONG | Cpu.T0CNT_T0HRUN;
+    cpu.t0l_counter = 0;
+    cpu.t0h_counter = 0;
+
+    cpu.tickTimers(10);
+    // Should NOT have ticked 16-bit cascade
+    try testing.expectEqual(@as(u8, 0), cpu.t0l_counter);
+    try testing.expectEqual(@as(u8, 0), cpu.t0h_counter);
+
+    // Now set both T0LRUN and T0HRUN
+    cpu.sfr_raw[Cpu.SFR_T0CNT] |= Cpu.T0CNT_T0LRUN;
+    cpu.tickTimers(5);
+    try testing.expectEqual(@as(u8, 5), cpu.t0l_counter);
+}
+
+test "Timer 1 Mode 2 ticks T1H as 8-bit when T1LRUN is 0" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+
+    // Set T1LONG and T1HRUN, but NOT T1LRUN
+    cpu.sfr_raw[Cpu.SFR_T1CNT] = Cpu.T1CNT_T1LONG | Cpu.T1CNT_T1HRUN;
+    cpu.t1l_counter = 0;
+    cpu.t1h_counter = 0;
+
+    // Tick 4 cycles
+    cpu.tickTimers(4);
+    // T1H should tick as 8-bit timer (4 / 1 = 4)
+    try testing.expectEqual(@as(u8, 4), cpu.t1h_counter);
+    try testing.expectEqual(@as(u8, 0), cpu.t1l_counter);
+}
+
+test "Interrupt dispatch requires IE master enable and peripheral flag" {
+    var rom: [65536]u8 = undefined;
+    var cpu = makeCpu(&rom);
+
+    // Set Timer 0 Low overflow flag and enable
+    cpu.sfr_raw[Cpu.SFR_T0CNT] = Cpu.T0CNT_T0LOVF | Cpu.T0CNT_T0LIE;
+    cpu.pc = 0x0200;
+
+    // Master enable (IE bit 7) is 0
+    cpu.sfr_raw[Cpu.SFR_IE] = 0x00;
+    cpu.servicePendingInterrupt();
+    try testing.expectEqual(@as(u16, 0x0200), cpu.pc);
+    try testing.expectEqual(@as(u8, 0), cpu.interrupt_depth);
+
+    // Now enable master IE
+    cpu.sfr_raw[Cpu.SFR_IE] = 0x80;
+    cpu.servicePendingInterrupt();
+    // Should have serviced INT2: vector 0x0013, pushed PC 0x0200, cleared T0LOVF
+    try testing.expectEqual(@as(u16, 0x0013), cpu.pc);
+    try testing.expectEqual(@as(u8, 1), cpu.interrupt_depth);
+    try testing.expectEqual(@as(u8, 0), cpu.sfr_raw[Cpu.SFR_T0CNT] & Cpu.T0CNT_T0LOVF);
 }

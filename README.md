@@ -50,13 +50,13 @@ Tableau détaillé instruction par instruction : [doc/doc_inst.md](doc/doc_inst.
 
 ## Validation
 
-- **54 tests automatisés**, `zig build test` → 54/54
+- **69 tests automatisés**, `zig build test` → 69/69
 - **67 des 70 instructions (96 %) ont au moins un test dédié**
 - **Sources des tests** : les exemples VMC-151 à VMC-224 du manuel de développement,
   plus des tests unitaires écrits à partir de séquences d'opcodes
 - Couvert : flags CY/AC/OV/P, arithmétique avec carry et overflow, rotations,
   branches conditionnelles prises et non prises, branche sur bit avec effacement
-  (BPC), pile, CALL/CALLF/RET imbriqués, bascule de bank par EXT
+  (BPC), pile, CALL/CALLF/RET imbriqués, bascule de bank par EXT, Timers 0/1, Base Timer, Work RAM (VRMAD/VTRBF)
 - :warning: Non couvert : `CALLR`, `LDF`/`STF`, coût de cycle mesuré, effets de bord des
   périphériques
 
@@ -76,8 +76,7 @@ test.
    des stockages — pas de modèle LCD, PWM ni Maple
 5. Port 1 (`0x44`-`0x46`)
 6. Série : `SCON0`/`SCON1`, `SBUF0`/`SBUF1`, `SBR` absents
-7. Work RAM : chemin `VRMAD`/`VTRBF` 
-8. Registre IP : le masquage global (`IE` bit 7) et les bits d'enable par
+7. Registre IP : le masquage global (`IE` bit 7) et les bits d'enable par
    périphérique sont gérés, mais IP n'est pas lu source par source
 
 ## Construire et tester
@@ -91,12 +90,10 @@ Un fichier test et un programme de test sont disponibles.
 
 ```sh
 zig build test --summary all
-Build Summary: 5/5 steps succeeded; 57/57 tests passed
+Build Summary: 5/5 steps succeeded; 69/69 tests passed
 test success
-├─ run test 54 pass (54 total) 16ms MaxRSS:4M
-│  └─ compile test Debug native cached 55ms MaxRSS:21M
-└─ run test 3 pass (3 total) 31ms MaxRSS:5M
-   └─ compile test Debug native cached 55ms MaxRSS:21M
+├─ run test 66 pass (66 total)
+└─ run test 3 pass (3 total)
 ```
 
 Zig 0.16 requis. 
@@ -135,7 +132,7 @@ lc86k.debug.log_sink = mySink; // sinon stderr
 | `decode.zig` | sémantique d'exécution d'une instruction |
 | `timer.zig` | comptage Timer 0, Timer 1, Base timer |
 | `debug.zig` | désassembleur, trace, détection de boucle |
-| `tests.zig` | 54 tests |
+| `tests.zig` | 66 tests unitaires |
 
 ## Documentation
 

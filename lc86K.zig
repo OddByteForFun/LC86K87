@@ -110,7 +110,7 @@ pub const Cpu = struct {
         cpu.sfr_raw[SFR_IE] = 0x80; // 108H: Master interrupt enable (EA=1)
         cpu.sfr_raw[SFR_SP] = 0x7F; // 106H: Stack pointer
         cpu.sfr_raw[SFR_P1FCR] = 0xBF; // 146H: Port 1 function control
-        cpu.sfr_raw[SFR_P3INT] = 0x00; // 0xFD; // 14EH: Port 3 interrupt
+        cpu.sfr_raw[SFR_P3INT] = 0xFD; // 14EH: Port 3 interrupt (reset default)
         cpu.sfr_raw[SFR_ISL] = 0xC0; // 15FH: Input signal select
         cpu.sfr_raw[SFR_BTCR] = 0x41; // 17FH: Base timer control (BT0_CYCLE + BT0_IE)
         cpu.sfr_raw[SFR_VCCR] = 0x80; // 127H: LCD display control (VCCR7=1)
@@ -148,7 +148,7 @@ pub const Cpu = struct {
         self.sfr_raw[SFR_IE] = 0x80; // 108H: Master interrupt enable (EA=1)
         self.sfr_raw[SFR_SP] = 0x7F; // 106H: Stack pointer
         self.sfr_raw[SFR_P1FCR] = 0xBF; // 146H: Port 1 function control
-        self.sfr_raw[SFR_P3INT] = 0x00; // 14EH: Port 3 interrupt
+        self.sfr_raw[SFR_P3INT] = 0xFD; // 14EH: Port 3 interrupt (reset default)
         self.sfr_raw[SFR_ISL] = 0xC0; // 15FH: Input signal select
         self.sfr_raw[SFR_BTCR] = 0x41; // 17FH: Base timer control (BT0_CYCLE + BT0_IE)
         self.sfr_raw[SFR_VCCR] = 0x80; // 127H: LCD display control (VCCR7=1)
@@ -500,13 +500,14 @@ pub const Cpu = struct {
     pub const CYCLES_PER_FBST_TICK: u32 = CPU_FREQ / FST_FREQ; // 183
     pub const BT1_THRESHOLDS: [4]u16 = .{ 32, 128, 512, 2048 }; // cycles fBST selon BTCR5:BTCR4
 
-    // Priorisation des interruptions (bits du registre IE)
-    pub const IP_int2: u8 = 0x04; // IE bit 2 = ET2 (INT2_T0L)
-    pub const IP_int3: u8 = 0x08; // IE bit 3 = ET3 (INT3_BT)
-    pub const IP_t0h: u8 = 0x10; // IE bit 4 = ET0H (T0H)
-    pub const IP_T1: u8 = 0x20; // IE bit 5 = ET1 (Timer 1)
-    pub const IP_SIO0: u8 = 0x40; // IE bit 6
-    pub const IP_SIO1: u8 = 0x80; // IE bit 7
+    // Priorisation des interruptions (bits du registre IP, 0x109)
+    pub const IP_P3: u8 = 0x80; // bit 7: Port 3 priority (0: Low, 1: High)
+    pub const IP_SIO1: u8 = 0x20; // bit 5: SIO1 priority
+    pub const IP_SIO0: u8 = 0x10; // bit 4: SIO0 priority
+    pub const IP_T1: u8 = 0x08; // bit 3: Timer 1 priority
+    pub const IP_t0h: u8 = 0x04; // bit 2: Timer 0 High priority
+    pub const IP_int3: u8 = 0x02; // bit 1: Base Timer (INT3) priority
+    pub const IP_int2: u8 = 0x01; // bit 0: Timer 0 Low (INT2) priority
 
     pub const SFR_EXT: u7 = 0x0D;
     pub const SFR_FPR: u7 = 0x54; // Flash Protection Register (bit0=FlashAddressBank, bit1=FlashWriteUnlock)
@@ -518,12 +519,18 @@ pub const Cpu = struct {
             SFR_C => self.c,
             SFR_TRL => self.trl,
             SFR_TRH => self.trh,
-            SFR_PSW => @as(u8, @bitCast(self.psw)),
+            SFR_PSW => blk: {
+                var p = self.psw;
+                p.p = @popCount(self.a) % 2 == 1;
+                break :blk @as(u8, @bitCast(p));
+            },
             SFR_SP => self.sp,
             SFR_T0L => self.t0l_counter,
             SFR_T0H => self.t0h_counter,
             SFR_T1L => self.t1l_counter,
             SFR_T1H => self.t1h_counter,
+            SFR_VRMAD1 => @truncate(self.vrmad & 0xFF),
+            SFR_VRMAD2 => 0xFE | @as(u8, @truncate((self.vrmad >> 8) & 0x01)),
             SFR_P3 => {
                 self.p3_read_count += 1;
                 if (p3ReadTrace and self.p3_buttons != 0xFF) {
@@ -542,7 +549,9 @@ pub const Cpu = struct {
                 const addr = self.vrmad & 0x1FF;
                 const data = if (addr < 512) self.work_ram[addr] else 0xFF;
                 if (self.sfr_raw[SFR_VSEL] & 0x10 != 0) {
-                    self.vrmad +%= 1;
+                    self.vrmad = (self.vrmad + 1) & 0x1FF;
+                    self.sfr_raw[SFR_VRMAD1] = @truncate(self.vrmad & 0xFF);
+                    self.sfr_raw[SFR_VRMAD2] = @truncate((self.vrmad >> 8) & 0x01);
                 }
                 return data;
             },
@@ -557,12 +566,20 @@ pub const Cpu = struct {
         if (offset == SFR_MPLSTA) return; // read-only register
         self.sfr_raw[offset] = val;
         switch (offset) {
-            SFR_ACC => self.a = val,
+            SFR_ACC => {
+                self.a = val;
+                self.psw.p = @popCount(val) % 2 == 1;
+            },
             SFR_B => self.b = val,
             SFR_C => self.c = val,
             SFR_TRL => self.trl = val,
             SFR_TRH => self.trh = val,
-            SFR_PSW => self.psw = @bitCast(val),
+            SFR_PSW => {
+                var p: Psw = @bitCast(val);
+                p.p = @popCount(self.a) % 2 == 1;
+                self.psw = p;
+                self.sfr_raw[SFR_PSW] = @bitCast(p);
+            },
             SFR_SP => self.sp = val,
             SFR_IE, SFR_IP => {
                 self.interrupt_blocked = 1;
@@ -609,9 +626,11 @@ pub const Cpu = struct {
             },
             SFR_VRMAD1 => {
                 self.vrmad = (self.vrmad & 0x100) | @as(u16, val);
+                self.sfr_raw[SFR_VRMAD1] = val;
             },
             SFR_VRMAD2 => {
                 self.vrmad = (self.vrmad & 0xFF) | (@as(u16, val & 0x01) << 8);
+                self.sfr_raw[SFR_VRMAD2] = val & 0x01;
             },
             SFR_MPLRST => {
                 // Maple reset: write $80 then $00 to reset Maple bus
@@ -625,7 +644,9 @@ pub const Cpu = struct {
                     self.work_ram[addr] = val;
                 }
                 if (self.sfr_raw[SFR_VSEL] & 0x10 != 0) {
-                    self.vrmad +%= 1;
+                    self.vrmad = (self.vrmad + 1) & 0x1FF;
+                    self.sfr_raw[SFR_VRMAD1] = @truncate(self.vrmad & 0xFF);
+                    self.sfr_raw[SFR_VRMAD2] = @truncate((self.vrmad >> 8) & 0x01);
                 }
             },
             SFR_BTCR => {

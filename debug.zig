@@ -72,6 +72,12 @@ pub fn disassembleAt(cpu: *Cpu, buf: []u8, pc: u16) usize {
         .fmtR => return fmtR(buf, start_pc, e.mnemonic, @intCast(e.ri orelse 0)),
         .fmtM => return fmtM(buf, start_pc, e.mnemonic, isa.decodeD9(opcode, operands[0]), operands[1]),
         .fmtMR => return fmtMR(buf, start_pc, e.mnemonic, @intCast(e.ri orelse 0), operands[0]),
+        .fmtMR_br => {
+            const imm8 = operands[0];
+            const r8 = operands[1];
+            const tgt: u16 = start_pc +% 3 +% @as(u16, @bitCast(@as(i16, @as(i8, @bitCast(r8)))));
+            return fmtMR_br(buf, start_pc, e.mnemonic, @intCast(e.ri orelse 0), imm8, tgt);
+        },
         .fmtBitBranch => return fmtBitAddress(buf, start_pc, e.mnemonic, isa.decodeD9(opcode, operands[0]), @intCast(e.bit orelse 0)),
         .fmtBitOp => return fmtBitAddress(buf, start_pc, e.mnemonic, isa.decodeD9(opcode, operands[0]), @intCast(e.bit orelse 0)),
     };
@@ -110,6 +116,10 @@ fn fmtM(buf: []u8, pc: u16, mnem: []const u8, addr: u16, imm: u8) usize {
 
 fn fmtMR(buf: []u8, pc: u16, mnem: []const u8, ri: u2, imm: u8) usize {
     return (std.fmt.bufPrint(buf, "{X:0>4}: {s} @R{d},#{X:0>2}h", .{ pc, mnem, ri, imm }) catch return 0).len;
+}
+
+fn fmtMR_br(buf: []u8, pc: u16, mnem: []const u8, ri: u2, imm: u8, tgt: u16) usize {
+    return (std.fmt.bufPrint(buf, "{X:0>4}: {s} @R{d},#{X:0>2}h,{X:0>4}h", .{ pc, mnem, ri, imm, tgt }) catch return 0).len;
 }
 
 fn fmtBitAddress(buf: []u8, pc: u16, mnem: []const u8, addr: u16, bit: u3) usize {

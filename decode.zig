@@ -150,18 +150,17 @@ pub fn step(cpu: *Cpu) u8 {
             const addr = readEA(cpu, dec);
             const val = cpu.load8(addr) +% 1;
             cpu.store8(addr, val);
-            cpu.psw.p = @popCount(val) % 2 == 1;
         },
         .dec_d9, .dec_ri => {
             const addr = readEA(cpu, dec);
             const val = cpu.load8(addr) -% 1;
             cpu.store8(addr, val);
-            cpu.psw.p = @popCount(val) % 2 == 1;
         },
 
         .ld => {
             const addr = readEA(cpu, dec);
             cpu.a = cpu.load8(addr);
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
             if (addr == 0x14C and cpu.p3_buttons != 0xFF and dbg.log_level == .trace) {
                 std.debug.print("LD P3 = {X:0>2} (PC={X:0>4})\n", .{ cpu.p3_buttons, cpu.pc - 2 });
             }
@@ -169,6 +168,7 @@ pub fn step(cpu: *Cpu) u8 {
         .ld_ri => {
             const addr = readIndirectAddr(cpu, @as(u2, @intCast(dec.ri.?)));
             cpu.a = cpu.load8(addr);
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
         .st => {
             const addr = readEA(cpu, dec);
@@ -197,6 +197,7 @@ pub fn step(cpu: *Cpu) u8 {
             const tmp = cpu.load8(addr);
             cpu.store8(addr, cpu.a);
             cpu.a = tmp;
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
 
         .mul => {
@@ -208,6 +209,7 @@ pub fn step(cpu: *Cpu) u8 {
             cpu.c = @truncate(result);
             cpu.psw.cy = false;
             cpu.psw.ov = result > 0xFFFF;
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
         .div => {
             // (ACC) (C), mod(B) <- (ACC) (C) / (B)
@@ -224,13 +226,12 @@ pub fn step(cpu: *Cpu) u8 {
                 cpu.psw.ov = false;
             }
             cpu.psw.cy = false;
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
         .ror => {
-            cpu.psw.cy = (cpu.a & 1) == 1;
             cpu.a = (cpu.a >> 1) | ((cpu.a & 1) << 7);
         },
         .rol => {
-            cpu.psw.cy = (cpu.a >> 7) == 1;
             cpu.a = (cpu.a << 1) | (cpu.a >> 7);
         },
         .rorc => {
@@ -292,17 +293,31 @@ pub fn step(cpu: *Cpu) u8 {
             const imm8 = cpu.fetch8();
             cpu.store8(addr, imm8);
         },
-        .be_imm, .be_d9, .be_ri => {
+        .be_imm, .be_d9 => {
             const val = readOp8(cpu, dec);
             const r8 = cpu.fetch8();
             cpu.psw.cy = cpu.a < val;
             if (cpu.a == val) cpu.pc +%= signExt8(r8);
         },
-        .bne_imm, .bne_d9, .bne_ri => {
+        .be_ri => {
+            const val = readOp8(cpu, dec); // val = ((Rj))
+            const imm8 = cpu.fetch8();
+            const r8 = cpu.fetch8();
+            cpu.psw.cy = val < imm8;
+            if (val == imm8) cpu.pc +%= signExt8(r8);
+        },
+        .bne_imm, .bne_d9 => {
             const val = readOp8(cpu, dec);
             const r8 = cpu.fetch8();
             cpu.psw.cy = cpu.a < val;
             if (cpu.a != val) cpu.pc +%= signExt8(r8);
+        },
+        .bne_ri => {
+            const val = readOp8(cpu, dec); // val = ((Rj))
+            const imm8 = cpu.fetch8();
+            const r8 = cpu.fetch8();
+            cpu.psw.cy = val < imm8;
+            if (val != imm8) cpu.pc +%= signExt8(r8);
         },
         .set1, .clr1, .not1 => {
             const addr = readEA(cpu, dec);
@@ -326,6 +341,7 @@ pub fn step(cpu: *Cpu) u8 {
             cpu.ram_bank0[cpu.sp] = @truncate(return_addr >> 8);
             const target = (@as(u16, hi) << 8) | @as(u16, lo);
             cpu.pc = target;
+            cpu.syncInstructionBank(); // bank switch différé : commit le switch ici
         },
         .jmpf => {
             const hi = cpu.fetch8();
@@ -344,9 +360,11 @@ pub fn step(cpu: *Cpu) u8 {
             // (ACC) ← (BNK)((TRR) + (ACC)) [ROM]
             const trr = (@as(u16, cpu.trh) << 8) | cpu.trl;
             cpu.a = cpu.inst_bank.data[trr +% cpu.a];
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
         .ldf => {
             cpu.a = cpu.readFlash();
+            cpu.psw.p = @popCount(cpu.a) % 2 == 1;
         },
         .stf => {
             cpu.writeFlash(cpu.a);
@@ -427,7 +445,7 @@ fn signExt8(val: u8) u16 {
 fn readIndirectAddr(cpu: *Cpu, ri: u2) u9 {
     const irbk: u4 = @truncate((@as(u8, @bitCast(cpu.psw)) >> 3) & 0b11);
     const reg_addr: u4 = (irbk << 2) | @as(u4, ri);
-    const reg_val = cpu.ram_bank0[reg_addr];
+    const reg_val = cpu.currentRamBank()[reg_addr];
     const bit8: u9 = if (ri & 2 != 0) 0x100 else 0;
     return bit8 | reg_val;
 }

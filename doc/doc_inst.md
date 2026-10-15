@@ -20,12 +20,12 @@ Le LC86K possède 70 instructions (p561 du manuel).
 | SUBC | `0xB1` | #i8 | CY AC OV P | ACC ← ACC − i8 − CY |
 | SUBC | `0xB2-0xB3` | d9 | CY AC OV P | ACC ← ACC − (d9) − CY |
 | SUBC | `0xB4-0xB7` | @Ri | CY AC OV P | ACC ← ACC − ((Ri)) − CY |
-| INC | `0x62-0x63` | d9 | P | (d9) ← (d9) + 1 |
-| INC | `0x64-0x67` | @Ri | P | ((Ri)) ← ((Ri)) + 1 |
-| DEC | `0x72-0x73` | d9 | P | (d9) ← (d9) − 1 |
-| DEC | `0x74-0x77` | @Ri | P | ((Ri)) ← ((Ri)) − 1 |
-| MUL | `0x30` | impl | CY=0, OV | B:ACC:C ← (ACC:C) × B |
-| DIV | `0x40` | impl | CY=0, OV | ACC:C, mod(B) ← (ACC:C) ÷ B |
+| INC | `0x62-0x63` | d9 | — | (d9) ← (d9) + 1 |
+| INC | `0x64-0x67` | @Ri | — | ((Ri)) ← ((Ri)) + 1 |
+| DEC | `0x72-0x73` | d9 | — | (d9) ← (d9) − 1 |
+| DEC | `0x74-0x77` | @Ri | — | ((Ri)) ← ((Ri)) − 1 |
+| MUL | `0x30` | impl | CY=0, OV, P | B:ACC:C ← (ACC:C) × B |
+| DIV | `0x40` | impl | CY=0, OV, P | ACC:C, mod(B) ← (ACC:C) ÷ B |
 
 ### Logical instructions
 
@@ -40,28 +40,28 @@ Le LC86K possède 70 instructions (p561 du manuel).
 | XOR | `0xF1` | #i8 | P | ACC ← ACC ^ i8 |
 | XOR | `0xF2-0xF3` | d9 | P | ACC ← ACC ^ (d9) |
 | XOR | `0xF4-0xF7` | @Ri | P | ACC ← ACC ^ ((Ri)) |
-| ROL | `0xE0` | impl | CY | rotate left through ACC, LSB ← MSB |
+| ROL | `0xE0` | impl | — | rotate left through ACC, LSB ← MSB |
 | ROLC | `0xF0` | impl | CY | rotate left through ACC via CY |
-| ROR | `0xC0` | impl | CY | rotate right through ACC, MSB ← LSB |
+| ROR | `0xC0` | impl | — | rotate right through ACC, MSB ← LSB |
 | RORC | `0xD0` | impl | CY | rotate right through ACC via CY |
 
 ### Data transfer instructions
 
 | Inst | Opcodes | Mode | Flags | Description |
 |------|---------|------|-------|-------------|
-| LD | `0x02-0x03` | d9 | — | ACC ← (d9) |
-| LD | `0x04-0x07` | @Ri | — | ACC ← ((Ri)) |
+| LD | `0x02-0x03` | d9 | P | ACC ← (d9) |
+| LD | `0x04-0x07` | @Ri | P | ACC ← ((Ri)) |
 | ST | `0x12-0x13` | d9 | — | (d9) ← ACC |
 | ST | `0x14-0x17` | @Ri | — | ((Ri)) ← ACC |
 | MOV | `0x22-0x23` | d9, #i8 | — | (d9) ← i8 |
 | MOV | `0x24-0x27` | @Ri, #i8 | — | ((Ri)) ← i8 |
-| LDC | `0xC1` | impl | — | ACC ← (BNK)(TRR + ACC) |
+| LDC | `0xC1` | impl | P | ACC ← (BNK)(TRR + ACC) |
 | PUSH | `0x60-0x61` | d9 | — | SP++ ; (SP) ← (d9) |
 | POP | `0x70-0x71` | d9 | — | (d9) ← (SP) ; SP−− |
-| XCH | `0xC2-0xC3` | d9 | — | swap ACC ↔ (d9) |
-| XCH | `0xC4-0xC7` | @Ri | — | swap ACC ↔ ((Ri)) |
-| LDF | `0x50` | impl | — | ACC ← flash[TRH:TRL + ACC], 17 bits |
-| STF | `0x51` | impl | — | flash[TRH:TRL + ACC] ← ACC, séquence unlock + RC requis |
+| XCH | `0xC2-0xC3` | d9 | P | swap ACC ↔ (d9) |
+| XCH | `0xC4-0xC7` | @Ri | P | swap ACC ↔ ((Ri)) |
+| LDF | `0x50` | impl | P | ACC ← flash[TRH:TRL] (17 bits via FPR) |
+| STF | `0x51` | impl | — | flash[TRH:TRL] ← ACC, séquence unlock + RC requis |
 
 ### Jump instructions
 
@@ -83,10 +83,10 @@ Le LC86K possède 70 instructions (p561 du manuel).
 | BPC | `0x48-0x4F, 0x58-0x5F` | d9, b3, r8 | — | if bit(d9,b3)=1 → PC ← PC + r8; clear bit |
 | BE | `0x31` | #i8, r8 | CY | if ACC == i8 → PC ← PC + r8 ; CY ← ACC < i8 |
 | BE | `0x32-0x33` | d9, r8 | CY | if ACC == (d9) → PC ← PC + r8 ; CY ← ACC < (d9) |
-| BE | `0x34-0x37` | @Ri, r8 | CY | if ACC == ((Ri)) → PC ← PC + r8 ; CY ← ACC < ((Ri)) |
+| BE | `0x34-0x37` | @Ri, #i8, r8 | CY | if ((Ri)) == i8 → PC ← PC + r8 ; CY ← ((Ri)) < i8 |
 | BNE | `0x41` | #i8, r8 | CY | if ACC ≠ i8 → PC ← PC + r8 ; CY ← ACC < i8 |
 | BNE | `0x42-0x43` | d9, r8 | CY | if ACC ≠ (d9) → PC ← PC + r8 ; CY ← ACC < (d9) |
-| BNE | `0x44-0x47` | @Ri, r8 | CY | if ACC ≠ ((Ri)) → PC ← PC + r8 ; CY ← ACC < ((Ri)) |
+| BNE | `0x44-0x47` | @Ri, #i8, r8 | CY | if ((Ri)) ≠ i8 → PC ← PC + r8 ; CY ← ((Ri)) < i8 |
 | DBNZ | `0x52-0x53` | d9, r8 | — | (d9) ← (d9) − 1 ; if (d9) ≠ 0 → PC ← PC + r8 |
 | DBNZ | `0x54-0x57` | @Ri, r8 | — | ((Ri)) ← ((Ri)) − 1 ; if ((Ri)) ≠ 0 → PC ← PC + r8 |
 
@@ -203,5 +203,5 @@ Le LC86K possède 70 instructions (p561 du manuel).
 | 🟢 testé | 67 |
 | 🔴 sans test | 3 (`callr`, `ldf`, `stf`) |
 
-**Tests :** 54/54 passent ✅ (`zig build test`).  
+**Tests :** 69/69 passent ✅ (`zig build test`).  
 Les tests couvrent les exemples VMC-XXX du **Sanyo LC86K Series Programming Manual** (section VMC-151 à VMC-224) et des tests unitaires ciblés pour les instructions sans exemple VMC. La seule instruction sans test dédié est `callr` (CALL relative, opcode 0x10).

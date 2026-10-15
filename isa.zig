@@ -104,6 +104,7 @@ pub const DispForm = enum {
     fmtR, // "@Rj"
     fmtM, // "xxxxh,#xxh"
     fmtMR, // "@Rj,#xxh"
+    fmtMR_br, // "@Rj,#xxh,xxxxh" : BE/BNE indirect branch
     fmtBitBranch, // "xxxh.b" : BP/BN/BPC
     fmtBitOp, // "xxxh.b" : NOT1/CLR1/SET1
 };
@@ -153,14 +154,14 @@ fn buildEntry(opcode: u8) IsaEntry {
             0x0 => .{ .inst = .mul, .size = 1, .cycles = 7, .mnemonic = "MUL", .disp = .fmtI },
             0x1 => .{ .inst = .be_imm, .mode = .imm, .size = 3, .cycles = 2, .mnemonic = "BE", .disp = .fmtBI },
             0x2...0x3 => .{ .inst = .be_d9, .mode = .d9, .size = 3, .cycles = 2, .mnemonic = "BE", .disp = .fmtA_d9 },
-            0x4...0x7 => .{ .inst = .be_ri, .mode = .ri, .size = 2, .cycles = 2, .mnemonic = "BE", .disp = .fmtR, .ri = col & 0x3 },
+            0x4...0x7 => .{ .inst = .be_ri, .mode = .ri, .size = 3, .cycles = 2, .mnemonic = "BE", .disp = .fmtMR_br, .ri = col & 0x3 },
             0x8...0xF => .{ .inst = .jmp_a12, .mode = .imm, .size = 2, .cycles = 2, .mnemonic = "JMP", .disp = .fmtA_jmp },
         },
         0x4 => switch (col) {
             0x0 => .{ .inst = .div, .size = 1, .cycles = 7, .mnemonic = "DIV", .disp = .fmtI },
             0x1 => .{ .inst = .bne_imm, .mode = .imm, .size = 3, .cycles = 2, .mnemonic = "BNE", .disp = .fmtBI },
             0x2...0x3 => .{ .inst = .bne_d9, .mode = .d9, .size = 3, .cycles = 2, .mnemonic = "BNE", .disp = .fmtA_d9 },
-            0x4...0x7 => .{ .inst = .bne_ri, .mode = .ri, .size = 2, .cycles = 2, .mnemonic = "BNE", .disp = .fmtR, .ri = col & 0x3 },
+            0x4...0x7 => .{ .inst = .bne_ri, .mode = .ri, .size = 3, .cycles = 2, .mnemonic = "BNE", .disp = .fmtMR_br, .ri = col & 0x3 },
             0x8...0xF => .{ .inst = .bpc, .mode = .d9, .size = 3, .cycles = 2, .mnemonic = "BPC", .disp = .fmtBitBranch, .bit = opcode & 0x7 },
         },
         0x5 => switch (col) {
