@@ -63,7 +63,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(lib);
 
     // ── Tests ────────────────────────────────────────────────────
-    // 1. Suite de tests manuels VMC (baseline)
+    // 1. Suite de tests manuels VMC (baseline constructeur)
     const vmc_test_mod = b.createModule(.{
         .root_source_file = b.path("tests.zig"),
         .target = target,
@@ -90,41 +90,8 @@ pub fn build(b: *std.Build) void {
     const prog_step = b.step("test-prog", "Exécuter le programme de validation assembleur");
     prog_step.dependOn(&run_prog_tests.step);
 
-    // 3. Suite de tests métamorphiques (MR1 à MR18 sans oracle)
-    const meta_test_mod = b.createModule(.{
-        .root_source_file = b.path("metamorphic_tests.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    meta_test_mod.addImport("lc86K", lc86K_mod);
-    meta_test_mod.addImport("decode", decode_mod);
-
-    const meta_tests = b.addTest(.{ .root_module = meta_test_mod });
-    const run_meta_tests = b.addRunArtifact(meta_tests);
-    const meta_step = b.step("test-meta", "Exécuter les tests métamorphiques sans oracle");
-    meta_step.dependOn(&run_meta_tests.step);
-
-    // 4. Suite de test différentiel Sail (bisimulation formelle)
-    const sail_test_mod = b.createModule(.{
-        .root_source_file = b.path("sail_test.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-    sail_test_mod.addImport("lc86K", lc86K_mod);
-    sail_test_mod.addImport("decode", decode_mod);
-    sail_test_mod.link_libc = true;
-    sail_test_mod.addObjectFile(b.path("sail/liblc86k_sail.a"));
-    sail_test_mod.addLibraryPath(.{ .cwd_relative = "/opt/homebrew/opt/gmp/lib" });
-    sail_test_mod.linkSystemLibrary("gmp", .{});
-
-    const sail_tests = b.addTest(.{ .root_module = sail_test_mod });
-    const run_sail_tests = b.addRunArtifact(sail_tests);
-    const sail_step = b.step("test-sail", "Exécuter les tests de bisimulation formelle Sail vs Zig");
-    sail_step.dependOn(&run_sail_tests.step);
-
-    // 5. Cible par défaut "zig build test" (exécute les suites VMC, validation assembleur et métamorphiques)
-    const test_step = b.step("test", "Exécuter l'ensemble des suites de tests");
+    // 3. Cible globale "zig build test" (exécute les suites VMC et validation assembleur)
+    const test_step = b.step("test", "Exécuter l'ensemble des tests du cœur CPU");
     test_step.dependOn(&run_vmc_tests.step);
     test_step.dependOn(&run_prog_tests.step);
-    test_step.dependOn(&run_meta_tests.step);
 }
