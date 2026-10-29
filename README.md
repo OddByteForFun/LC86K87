@@ -7,11 +7,6 @@ aucun système de fichiers.
 > Emulator core for the Sanyo LC86K87 (Dreamcast VMU) 8-bit CPU, written in Zig.
 > Keywords: Dreamcast, VMU, visual memory unit, LC86K87, Sanyo, emulator, CPU, Zig.
 
-> [!NOTE]
-> **Recherche, Thèse & Vérification Formelle :**  
-> L'ensemble des travaux académiques (articles IEEE, thèse doctorale), la spécification formelle déclarative **Cambridge Sail**, la suite de **Test Métamorphique sans oracle** (MR1-18) et le banc d'évaluation par **Mutation Testing** sont hébergés dans le dépôt dédié :  
-> 👉 [**OddByteForFun/research**](https://github.com/OddByteForFun/research)
-
 ## Spécification
 
 | Élément | Implémentation |
